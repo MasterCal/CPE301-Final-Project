@@ -1,3 +1,5 @@
+#include <Stepper.h>
+
 //GPIO Registers
 volatile unsigned char *portF  =  (unsigned char *) 0x31;
 volatile unsigned char *portDDRF = (unsigned char *) 0x30; 
@@ -15,6 +17,8 @@ volatile unsigned char *myUCSR0C  = (unsigned char *) 0xC2;
 volatile unsigned int  *myUBRR0   = (unsigned int *) 0xC4;
 volatile unsigned char *myUDR0    = (unsigned char *) 0xC6;
 
+const int stepsPerRevolution = 90;
+Stepper myStepper(stepsPerRevolution, 8, 9, 10, 11);
 void setup()
 {
   Serial.begin(9600);
@@ -23,10 +27,16 @@ void setup()
   *portDDRF |= 0x01;
   *portF &= 0xFE;
   adc_setup();
+  myStepper.setSpeed(5);
+  pinMode(7, OUTPUT);
 }
   
 void loop()
 {
+  if(digitalRead(7) == HIGH)
+  {
+   myStepper.step(stepsPerRevolution);
+  }
   *portB |= 0b01000000;
   unsigned int waterLevel = adc_read(0);
   
