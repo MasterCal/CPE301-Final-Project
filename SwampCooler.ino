@@ -1,4 +1,5 @@
 #include <Stepper.h>
+#include <LiquidCrystal.h>
 
 //GPIO Registers
 volatile unsigned char *portF  =  (unsigned char *) 0x31;
@@ -19,6 +20,10 @@ volatile unsigned char *myUDR0    = (unsigned char *) 0xC6;
 
 const int stepsPerRevolution = 90;
 Stepper myStepper(stepsPerRevolution, 8, 9, 10, 11);
+
+const int rs = 22, en = 23, d4 = 24, d5 = 25, d6 = 26, d7 = 27;
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+
 void setup()
 {
   Serial.begin(9600);
@@ -29,6 +34,8 @@ void setup()
   adc_setup();
   myStepper.setSpeed(5);
   pinMode(7, OUTPUT);
+  lcd.begin(16, 2);
+  lcd.setCursor(0, 1);
 }
   
 void loop()
