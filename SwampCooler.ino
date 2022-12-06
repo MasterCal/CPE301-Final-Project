@@ -2,6 +2,7 @@
 #include <LiquidCrystal.h>
 #include <Wire.h>
 #include <RealTimeClockDS1307.h>
+#include <dht.h>
 
 //GPIO Registers
 volatile unsigned char *portF  =  (unsigned char *) 0x31;
@@ -38,8 +39,9 @@ void setup()
   pinMode(7, OUTPUT); // button output
   lcd.begin(16, 2);
   lcd.setCursor(0, 1);
-  pinMode(A2, OUTPUT) // RTC SDA
-  pinMode(A3, OUTPUT) // RTC SDL
+  pinMode(A1, OUTPUT) // RTC SDA
+  pinMode(A2, OUTPUT) // RTC SDL
+  pinMode(A3, OUTPUT) // DHT signal
 }
   
 void loop()
