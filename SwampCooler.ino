@@ -1,5 +1,7 @@
 #include <Stepper.h>
 #include <LiquidCrystal.h>
+#include <Wire.h>
+#include <RealTimeClockDS1307.h>
 
 //GPIO Registers
 volatile unsigned char *portF  =  (unsigned char *) 0x31;
@@ -33,9 +35,11 @@ void setup()
   *portF &= 0xFE;
   adc_setup();
   myStepper.setSpeed(5);
-  pinMode(7, OUTPUT);
+  pinMode(7, OUTPUT); // button output
   lcd.begin(16, 2);
   lcd.setCursor(0, 1);
+  pinMode(A2, OUTPUT) // RTC SDA
+  pinMode(A3, OUTPUT) // RTC SDL
 }
   
 void loop()
