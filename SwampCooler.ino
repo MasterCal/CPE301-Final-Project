@@ -9,6 +9,8 @@ volatile unsigned char *portF  =  (unsigned char *) 0x31;
 volatile unsigned char *portDDRF = (unsigned char *) 0x30; 
 volatile unsigned char *portB  = (unsigned char *) 0x25;
 volatile unsigned char *portDDRB = (unsigned char *) 0x24;
+volatile unsigned char *portC = (unsigned char *) 0x28;
+volatile unsigned char *portDDRC = (unsigned char *) 0x27;
 //ADC Registers
 volatile unsigned char* my_ADMUX = (unsigned char*) 0x7C;
 volatile unsigned char* my_ADCSRB = (unsigned char*) 0x7B;
@@ -42,6 +44,15 @@ void setup()
   pinMode(A1, OUTPUT) // RTC SDA
   pinMode(A2, OUTPUT) // RTC SDL
   pinMode(A3, OUTPUT) // DHT signal
+  
+  rtc.begin();
+  rtc.setDOW(FRIDAY);
+  rtc.startClock();
+  rtc.setDate(9, 12, 2022);
+  
+  //LED setup
+  portDDRC &= 0b00111111; //digital pins 30 and 31 input
+  portDDRC |= 0b00111100; //digital pins 32-35 output
 }
   
 void loop()
