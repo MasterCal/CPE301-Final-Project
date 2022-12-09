@@ -6,8 +6,10 @@
 #include <DHT_U.h>
 
 //GPIO Registers
-volatile unsigned char *portF  =  (unsigned char *) 0x31;
-volatile unsigned char *portDDRF = (unsigned char *) 0x30; 
+volatile unsigned char *portF  =  (unsigned char *) 0x31; //analog A5
+volatile unsigned char *portDDRF = (unsigned char *) 0x30;
+volatile unsigned char *portE = (unsigned char *) 0x2E;
+volatile unsigned char *portDDRE = (unsigned char *) 0x2D;
 volatile unsigned char *portB  = (unsigned char *) 0x25;
 volatile unsigned char *portDDRB = (unsigned char *) 0x24;
 volatile unsigned char *portC = (unsigned char *) 0x28;
@@ -42,14 +44,12 @@ void setup()
   Serial.begin(9600);
   *portDDRB |= 0x40;
   *portB &= 0xBF;
-  *portDDRF |= 0x01;
-  *portF &= 0xFE;
+  *portDDRF |= 0b00100000;
+  *portF &= 0b11011111;
   adc_setup();
   myStepper.setSpeed(5);
   pinMode(7, OUTPUT); // button output
   lcd.begin(16, 2);
-  pinMode(A1, OUTPUT); // RTC SDA
-  pinMode(A2, OUTPUT); // RTC SDL
   
   dht.begin();
   
@@ -127,6 +127,7 @@ void loop()
     }
     //stop button
   }
+  now = rtc.now();
 }
 
 void start() //start button interrupt function
