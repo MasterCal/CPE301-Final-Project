@@ -1,7 +1,7 @@
 #include <Stepper.h>
 #include <LiquidCrystal.h>
 #include <Wire.h>
-#include <RealTimeClockDS1307.h>
+#include <RTClib.h>
 #include <dht.h>
 
 //GPIO Registers
@@ -29,6 +29,9 @@ Stepper myStepper(stepsPerRevolution, 8, 9, 10, 11);
 const int rs = 22, en = 23, d4 = 24, d5 = 25, d6 = 26, d7 = 27;
 LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 
+RTC_DS1307 rtc;
+uint8_t nextMinute = 0;
+
 void setup()
 {
   Serial.begin(9600);
@@ -45,29 +48,38 @@ void setup()
   pinMode(4, OUTPUT) // DHT signal
   
   rtc.begin();
-  rtc.setDOW(FRIDAY);
-  rtc.startClock();
-  rtc.setDate(9, 12, 2022);
+  rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   
   //LED setup
   *portDDRC |= 0b00111100; //digital pins 32-35 output
   
   tempThreshold = 25;
+  
+  //Start button
+  attachInterrupt(digitalPinToInterrupt(2), start, RISING);
+  
+  //Reset button
+  attachInterrupt(digitalPinToInterrupt(3), reset, RISING);
+  
+  //Stop button
+  attachInterrupt(digitialPinToInterrupt(18), stop, RISING);
+  
+  *portC |= (1<<5); // begin in Disabled state
+  Serial.print(now.hour(), DEC);
+  Serial.print(':');
+  Serial.print(now.minute(), DEC);
+  Serial.print(':');
+  Serial.print(now.second(), DEC);
+  Serial.println("Begin in DISABLED.");
 }
   
 void loop()
 {
-  //Start button
-  attachInterrupt(digitalPinToInterrupt(2), start, RISING);
-  // Disabled state
-  *portC &= ~(1<<4); //turn off green
-  *portC |= (1<<5); //turn on yellow
-  //Reset button
-  attachInterrupt(digitalPinToInterrupt(3), reset, RISING);
+  DateTime now = rtc.now();
+  nextMinute = now.minute() + 1;
   
   if(*portC&(0<<5) == 1) // if not in disabled state
   {
-    //temperature and humidity to LCD
     if(*portC&(1<<4) == 1) // in idle state
     {
       monitor_water_levels();
@@ -75,20 +87,32 @@ void loop()
       {
         *portC &= ~(1<<4); // turn off green
         *portC |= (1<<2); //turn on blue
-        //serial.println change in state with rtc
+        Serial.print(now.hour(), DEC);
+        Serial.print(':');
+        Serial.print(now.minute(), DEC);
+        Serial.print(':');
+        Serial.print(now.second(), DEC);
+        Serial.println("Change from IDLE to RUNNING.");
       }
       else // change to idle state
       {
         *portC &= ~(1<<2); //turn off blue
         *portC |= (1<<4); // turn on green
-        //serial.println change in state with rtc
+        Serial.print(now.hour(), DEC);
+        Serial.print(':');
+        Serial.print(now.minute(), DEC);
+        Serial.print(':');
+        Serial.print(now.second(), DEC);
+        Serial.println("Change from RUNNING to IDLE.");
       }
     }
     //print DHT to LCD every min
-    //every minute
-    lcd.print("Temperature: ", DHT.temperature);
-    lcd.setCursor(0, 1);
-    lcd.print("Humidity: ", DHT.humidity);
+    if(now.minute() == nextMinute)
+    {
+      lcd.print("Temperature: ", DHT.temperature);
+      lcd.setCursor(0, 1);
+      lcd.print("Humidity: ", DHT.humidity);
+    }
     //stop button
   }
 }
@@ -97,15 +121,39 @@ void start() //start button interrupt function
 {
     *portC &= ~(1<<5); //turn off yellow
     *portC |= (1<<4); //turn on green
-    //Serial.println change in state with rtc
+    Serial.print(now.hour(), DEC);
+    Serial.print(':');
+    Serial.print(now.minute(), DEC);
+    Serial.print(':');
+    Serial.print(now.second(), DEC);
+    Serial.println("Change from DISABLED to IDLE.");
 }
 
 void reset() //reset button interrupt function
 {
   *portC &= ~(1<<3); //turn off red
-  *portC |= (1<<2); //turn on blue
+  *portC |= (1<<4); //turn on blue
   lcd.clear();
-  //Serial.println change in state with rtc
+  Serial.print(now.hour(), DEC);
+  Serial.print(':');
+  Serial.print(now.minute(), DEC);
+  Serial.print(':');
+  Serial.print(now.second(), DEC);
+  Serial.println("Change from ERROR to IDLE.");
+}
+
+void stop()
+{
+  *portC &= ~(1<<2); //turn off blue
+  *portC &= ~(1<<3); //turn off red
+  *portC &= ~(1<<4); //turn off green
+  *portC |= (1<<5); //turn on yellow
+  Serial.print(now.hour(), DEC);
+  Serial.print(':');
+  Serial.print(now.minute(), DEC);
+  Serial.print(':');
+  Serial.print(now.second(), DEC);
+  Serial.println("Change to DISABLED.");
 }
 
 void monitor_water_levels()
@@ -125,6 +173,12 @@ void monitor_water_levels()
     lcd.setCursor("Too Low");
     *portC &= ~(1<<4); // turn off green
     *portC |= (1<<3); // turn on red
+    Serial.print(now.hour(), DEC);
+    Serial.print(':');
+    Serial.print(now.minute(), DEC);
+    Serial.print(':');
+    Serial.print(now.second(), DEC);
+    Serial.println("Change from IDLE to ERROR.");
   }
 }
 
