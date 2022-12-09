@@ -40,10 +40,9 @@ void setup()
   myStepper.setSpeed(5);
   pinMode(7, OUTPUT); // button output
   lcd.begin(16, 2);
-  lcd.setCursor(0, 1);
   pinMode(A1, OUTPUT) // RTC SDA
   pinMode(A2, OUTPUT) // RTC SDL
-  pinMode(A3, OUTPUT) // DHT signal
+  pinMode(4, OUTPUT) // DHT signal
   
   rtc.begin();
   rtc.setDOW(FRIDAY);
@@ -51,22 +50,81 @@ void setup()
   rtc.setDate(9, 12, 2022);
   
   //LED setup
-  portDDRC &= 0b00111111; //digital pins 30 and 31 input
-  portDDRC |= 0b00111100; //digital pins 32-35 output
+  *portDDRC |= 0b00111100; //digital pins 32-35 output
+  
+  tempThreshold = 25;
 }
   
 void loop()
 {
+  //Start button
+  attachInterrupt(digitalPinToInterrupt(2), start, RISING);
+  // Disabled state
+  *portC &= ~(1<<4); //turn off green
+  *portC |= (1<<5); //turn on yellow
+  //Reset button
+  attachInterrupt(digitalPinToInterrupt(3), reset, RISING);
+  
+  if(*portC&(0<<5) == 1) // if not in disabled state
+  {
+    //temperature and humidity to LCD
+    if(*portC&(1<<4) == 1) // in idle state
+    {
+      monitor_water_levels();
+      if(DHT.temperature > tempThreshold) // change to running state
+      {
+        *portC &= ~(1<<4); // turn off green
+        *portC |= (1<<2); //turn on blue
+        //serial.println change in state with rtc
+      }
+      else // change to idle state
+      {
+        *portC &= ~(1<<2); //turn off blue
+        *portC |= (1<<4); // turn on green
+        //serial.println change in state with rtc
+      }
+    }
+    //print DHT to LCD every min
+    //every minute
+    lcd.print("Temperature: ", DHT.temperature);
+    lcd.setCursor(0, 1);
+    lcd.print("Humidity: ", DHT.humidity);
+    //stop button
+  }
+}
+
+void start() //start button interrupt function
+{
+    *portC &= ~(1<<5); //turn off yellow
+    *portC |= (1<<4); //turn on green
+    //Serial.println change in state with rtc
+}
+
+void reset() //reset button interrupt function
+{
+  *portC &= ~(1<<3); //turn off red
+  *portC |= (1<<2); //turn on blue
+  lcd.clear();
+  //Serial.println change in state with rtc
+}
+
+void monitor_water_levels()
+{
   if(digitalRead(7) == HIGH)
   {
-   myStepper.step(stepsPerRevolution);
+    myStepper.step(stepsPerRevolution);
+    Serial.println("Step Motor Rotated");
   }
   *portB |= 0b01000000;
   unsigned int waterLevel = adc_read(0);
   
   if(waterLevel < 300)
   {
-    Serial.print("Water Level Too Low! Reading %d", waterLevel);
+    lcd.clear();
+    lcd.print("Error: Water Level");
+    lcd.setCursor("Too Low");
+    *portC &= ~(1<<4); // turn off green
+    *portC |= (1<<3); // turn on red
   }
 }
 
