@@ -2,7 +2,8 @@
 #include <LiquidCrystal.h>
 #include <Wire.h>
 #include <RTClib.h>
-#include <dht.h>
+#include <DHT.h>
+#include <DHT_U.h>
 
 //GPIO Registers
 volatile unsigned char *portF  =  (unsigned char *) 0x31;
@@ -32,6 +33,10 @@ LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 RTC_DS1307 rtc;
 uint8_t nextMinute = 0;
 
+int tempThreshold = 25;
+DateTime now = rtc.now();
+DHT dht(4, DHT11);
+
 void setup()
 {
   Serial.begin(9600);
@@ -43,17 +48,16 @@ void setup()
   myStepper.setSpeed(5);
   pinMode(7, OUTPUT); // button output
   lcd.begin(16, 2);
-  pinMode(A1, OUTPUT) // RTC SDA
-  pinMode(A2, OUTPUT) // RTC SDL
-  pinMode(4, OUTPUT) // DHT signal
+  pinMode(A1, OUTPUT); // RTC SDA
+  pinMode(A2, OUTPUT); // RTC SDL
+  
+  dht.begin();
   
   rtc.begin();
   rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   
   //LED setup
   *portDDRC |= 0b00111100; //digital pins 32-35 output
-  
-  tempThreshold = 25;
   
   //Start button
   attachInterrupt(digitalPinToInterrupt(2), start, RISING);
@@ -62,7 +66,7 @@ void setup()
   attachInterrupt(digitalPinToInterrupt(3), reset, RISING);
   
   //Stop button
-  attachInterrupt(digitialPinToInterrupt(18), stop, RISING);
+  attachInterrupt(digitalPinToInterrupt(18), stop, RISING);
   
   *portC |= (1<<5); // begin in Disabled state
   Serial.print(now.hour(), DEC);
@@ -75,7 +79,6 @@ void setup()
   
 void loop()
 {
-  DateTime now = rtc.now();
   nextMinute = now.minute() + 1;
   
   if(*portC&(0<<5) == 1) // if not in disabled state
@@ -83,7 +86,8 @@ void loop()
     if(*portC&(1<<4) == 1) // in idle state
     {
       monitor_water_levels();
-      if(DHT.temperature > tempThreshold) // change to running state
+      float t = dht.readTemperature();
+      if(t > tempThreshold) // change to running state
       {
         *portC &= ~(1<<4); // turn off green
         *portC |= (1<<2); //turn on blue
@@ -109,9 +113,17 @@ void loop()
     //print DHT to LCD every min
     if(now.minute() == nextMinute)
     {
-      lcd.print("Temperature: ", DHT.temperature);
+      float t = dht.readTemperature();
+      float h = dht.readHumidity();
+      lcd.setCursor(0, 0);
+      lcd.print("Temp: ");
+      lcd.print(t);
+      lcd.print((char)223);
+      lcd.print("C");
       lcd.setCursor(0, 1);
-      lcd.print("Humidity: ", DHT.humidity);
+      lcd.print("Humidity: ");
+      lcd.print(h);
+      lcd.print("%");
     }
     //stop button
   }
@@ -169,8 +181,10 @@ void monitor_water_levels()
   if(waterLevel < 300)
   {
     lcd.clear();
+    lcd.setCursor(0, 0);
     lcd.print("Error: Water Level");
-    lcd.setCursor("Too Low");
+    lcd.setCursor(0, 1);
+    lcd.print("Too Low");
     *portC &= ~(1<<4); // turn off green
     *portC |= (1<<3); // turn on red
     Serial.print(now.hour(), DEC);
@@ -187,8 +201,8 @@ void adc_setup()
    *my_ADCSRA |= 0b10000000;
    *my_ADCSRA &= 0b11010000;
    *my_ADCSRA &= 0b11110000;
-   *myADMUX |= 0b01000000;
-   *myADMUX &= 0b01000000;
+   *my_ADMUX |= 0b01000000;
+   *my_ADMUX &= 0b01000000;
 }
 
 unsigned int adc_read(unsigned char channelNum)
