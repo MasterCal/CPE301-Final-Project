@@ -30,6 +30,11 @@ DHT dht(4, DHT11);
 const int rs = 22, en = 23, d4 = 24, d5 = 25, d6 = 26, d7 = 27;
 LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 
+const int stepsPerRevolution = 512;
+Stepper myStepper = Stepper(stepsPerRevolution, 8, 9, 10, 11);
+bool isClockwise = true;
+
+
 int value = 0;
 
 void setup() 
@@ -48,6 +53,7 @@ void setup()
   nextMinute = currentTime.minute() + 1;
   
   dht.begin();
+  myStepper.setSpeed(5);
   lcd.begin(16, 2);
   lcd.print("Caleb");
   lcd.setCursor(0,1);
@@ -63,6 +69,8 @@ void setup()
 
   attachInterrupt(digitalPinToInterrupt(2), start, HIGH); //Start button 
   attachInterrupt(digitalPinToInterrupt(3), reset, HIGH); //Reset button
+  attachInterrupt(digitalPinToInterrupt(18), turn, RISING);//turn button
+  
 }
 
 void loop() 
@@ -179,6 +187,16 @@ void reset()
       lcd.print((int)h);
       lcd.print("%");
     }
+  }
+}
+
+void turn()
+{
+  if(*portC != 0b10000000)
+  {
+    myStepper.step(stepsPerRevolution);
+    Serial.println("90D clockwise");
+   
   }
 }
 
