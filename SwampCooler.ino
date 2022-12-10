@@ -1,219 +1,202 @@
-#include <Stepper.h>
-#include <LiquidCrystal.h>
 #include <Wire.h>
 #include <RTClib.h>
 #include <DHT.h>
-#include <DHT_U.h>
+#include <LiquidCrystal.h>
+#include <Stepper.h>
 
 //GPIO Registers
-volatile unsigned char *portF  =  (unsigned char *) 0x31; //analog A5
-volatile unsigned char *portDDRF = (unsigned char *) 0x30;
-volatile unsigned char *portE = (unsigned char *) 0x2E;
-volatile unsigned char *portDDRE = (unsigned char *) 0x2D;
-//volatile unsigned char *portB  = (unsigned char *) 0x25;
-//volatile unsigned char *portDDRB = (unsigned char *) 0x24;
+//State LEDs - Digital Pins 30 (Y), 31 (G), 32 (R), 33 (B)
 volatile unsigned char *portC = (unsigned char *) 0x28;
-volatile unsigned char *portDDRC = (unsigned char *) 0x27;
+volatile unsigned char *myDDRC = (unsigned char *) 0x27;
+//Water Sensor - Digital Pin 7
+volatile unsigned char *portH = (unsigned char *) 0x102;
+volatile unsigned char *myDDRH = (unsigned char *) 0x101;
+
 //ADC Registers
 volatile unsigned char* my_ADMUX = (unsigned char*) 0x7C;
 volatile unsigned char* my_ADCSRB = (unsigned char*) 0x7B;
 volatile unsigned char* my_ADCSRA = (unsigned char*) 0x7A;
 volatile unsigned int* my_ADC_DATA = (unsigned int*) 0x78;
-//UART Registers
-volatile unsigned char *myUCSR0A  = (unsigned char *) 0xC0;
-volatile unsigned char *myUCSR0B  = (unsigned char *) 0xC1;
-volatile unsigned char *myUCSR0C  = (unsigned char *) 0xC2;
-volatile unsigned int  *myUBRR0   = (unsigned int *) 0xC4;
-volatile unsigned char *myUDR0    = (unsigned char *) 0xC6;
 
-const int stepsPerRevolution = 90;
-Stepper myStepper(stepsPerRevolution, 8, 9, 10, 11);
+const int waterThreshold = 100;
+const int tempThreshold = 20;
+
+RTC_DS1307 rtc;
+DateTime currentTime;
+int nextMinute = 0; //value to update the temperature and humidity every minute
+
+DHT dht(4, DHT11);
 
 const int rs = 22, en = 23, d4 = 24, d5 = 25, d6 = 26, d7 = 27;
 LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 
-RTC_DS1307 rtc;
-uint8_t nextMinute = 0;
+int value = 0;
 
-int tempThreshold = 25;
-DateTime now = rtc.now();
-DHT dht(4, DHT11);
-
-void setup()
+void setup() 
 {
   Serial.begin(9600);
-  //*portDDRB |= 0x40;
-  //*portB &= 0xBF;
-  *portDDRF |= 0b00100000;
-  *portF &= 0b11011111;
-  adc_setup();
-  myStepper.setSpeed(5);
-  pinMode(7, OUTPUT); // button output
-  lcd.begin(16, 2);
-  
-  dht.begin();
-  
+  *myDDRC |= 0xF0; //(PB[7:4] OUTPUT)
+  *portC &= 0b10001111;
+  *portC |= 0b10000000; //begin in DISABLED
+  adc_init();
+  *myDDRH |= (1<<4); //pinMode 7 OUTPUT
+  *portH &= ~(1<<4); //digitalWrite LOW
+
   rtc.begin();
   rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  currentTime = rtc.now();
+  nextMinute = currentTime.minute() + 1;
   
-  //LED setup
-  *portDDRC |= 0b00111100; //digital pins 32-35 output
-  
-  //Start button
-  attachInterrupt(digitalPinToInterrupt(2), start, RISING);
-  
-  //Reset button
-  attachInterrupt(digitalPinToInterrupt(3), reset, RISING);
-  
-  //Stop button
-  attachInterrupt(digitalPinToInterrupt(18), stop, RISING);
-  
-  *portC |= (1<<5); // begin in Disabled state
-  Serial.print(now.hour(), DEC);
+  dht.begin();
+  lcd.begin(16, 2);
+  lcd.print("Caleb");
+  lcd.setCursor(0,1);
+  lcd.print("Mohammedali");
+
+  Serial.print("This swamp cooler began at ");
+  Serial.print(currentTime.hour(), DEC);
   Serial.print(':');
-  Serial.print(now.minute(), DEC);
+  Serial.print(currentTime.minute(), DEC);
   Serial.print(':');
-  Serial.print(now.second(), DEC);
-  Serial.println("Begin in DISABLED.");
+  Serial.print(currentTime.second(), DEC);
+  Serial.println();
+
+  attachInterrupt(digitalPinToInterrupt(2), start, HIGH); //Start button 
+  attachInterrupt(digitalPinToInterrupt(3), reset, HIGH); //Reset button
 }
-  
-void loop()
+
+void loop() 
 {
-  nextMinute = now.minute() + 1;
-  
-  if(*portC&(0<<5) == 1) // if not in disabled state
+  currentTime = rtc.now();
+  if(*portC != 0b10000000)
   {
-    if(*portC&(1<<4) == 1) // in idle state
+    *portH |= (1<<4); //digitalWrite HIGH
+    delay(20);
+    value = adc_read(0); // Analog Pin 0
+    *portH &= ~(1<<4);
+    
+    Serial.print("Sensor value: ");
+    Serial.println(value);
+
+    if(currentTime.minute() == nextMinute && *portC != 0b00100000)
     {
-      monitor_water_levels();
-      float t = dht.readTemperature();
-      if(t > tempThreshold) // change to running state
-      {
-        *portC &= ~(1<<4); // turn off green
-        *portC |= (1<<2); //turn on blue
-        Serial.print(now.hour(), DEC);
-        Serial.print(':');
-        Serial.print(now.minute(), DEC);
-        Serial.print(':');
-        Serial.print(now.second(), DEC);
-        Serial.println("Change from IDLE to RUNNING.");
-      }
-      else // change to idle state
-      {
-        *portC &= ~(1<<2); //turn off blue
-        *portC |= (1<<4); // turn on green
-        Serial.print(now.hour(), DEC);
-        Serial.print(':');
-        Serial.print(now.minute(), DEC);
-        Serial.print(':');
-        Serial.print(now.second(), DEC);
-        Serial.println("Change from RUNNING to IDLE.");
-      }
-    }
-    //print DHT to LCD every min
-    if(now.minute() == nextMinute)
-    {
-      float t = dht.readTemperature();
-      float h = dht.readHumidity();
+      nextMinute++;
+      delay(10);
+      float tempCel = dht.readTemperature();
+      float humid = dht.readHumidity();
+
+      lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print("Temp: ");
-      lcd.print(t);
+      lcd.print(tempCel);
       lcd.print((char)223);
       lcd.print("C");
       lcd.setCursor(0, 1);
       lcd.print("Humidity: ");
-      lcd.print(h);
+      lcd.print(humid);
       lcd.print("%");
     }
-    //stop button
+    delay(1000);
+
+    if(value < waterThreshold && *portC == 0b01000000) // green light on and water level too low
+    {
+      *portC &= ~(1<<6); // turn green off
+      *portC |= (1<<5); // turn red on
+
+      Serial.print("State changed from IDLE to ERROR at ");
+      Serial.print(currentTime.hour(), DEC);
+      Serial.print(':');
+      Serial.print(currentTime.minute(), DEC);
+      Serial.print(':');
+      Serial.print(currentTime.second(), DEC);
+      Serial.println();
+      
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("ERROR: Water");
+      lcd.setCursor(0, 1);
+      lcd.print("Too Low.");
+    }
   }
-  now = rtc.now();
 }
 
-void start() //start button interrupt function
+void start()
 {
-    *portC &= ~(1<<5); //turn off yellow
-    *portC |= (1<<4); //turn on green
-    Serial.print(now.hour(), DEC);
-    Serial.print(':');
-    Serial.print(now.minute(), DEC);
-    Serial.print(':');
-    Serial.print(now.second(), DEC);
-    Serial.println("Change from DISABLED to IDLE.");
-}
-
-void reset() //reset button interrupt function
-{
-  *portC &= ~(1<<3); //turn off red
-  *portC |= (1<<4); //turn on blue
-  lcd.clear();
-  Serial.print(now.hour(), DEC);
-  Serial.print(':');
-  Serial.print(now.minute(), DEC);
-  Serial.print(':');
-  Serial.print(now.second(), DEC);
-  Serial.println("Change from ERROR to IDLE.");
-}
-
-void stop()
-{
-  *portC &= ~(1<<2); //turn off blue
-  *portC &= ~(1<<3); //turn off red
-  *portC &= ~(1<<4); //turn off green
-  *portC |= (1<<5); //turn on yellow
-  Serial.print(now.hour(), DEC);
-  Serial.print(':');
-  Serial.print(now.minute(), DEC);
-  Serial.print(':');
-  Serial.print(now.second(), DEC);
-  Serial.println("Change to DISABLED.");
-}
-
-void monitor_water_levels()
-{
-  
-  if(digitalRead(7) == HIGH)
+  if(*portC != 0b01000000)
   {
-    myStepper.step(stepsPerRevolution);
-    Serial.println("Step Motor Rotated");
-  }
-  //*portB |= 0b00100000;
-  *portF |= (1<<5);
-  unsigned int waterLevel = adc_read(0);
-  
-  if(waterLevel < 300)
-  {
+    *portC &= ~(1<<7); // turn yellow off
+    *portC |= (1<<6); // turn green on
+    Serial.print("State changed from DISABLED to IDLE at ");
+    Serial.print(currentTime.hour(), DEC);
+    Serial.print(':');
+    Serial.print(currentTime.minute(), DEC);
+    Serial.print(':');
+    Serial.print(currentTime.second(), DEC);
+    Serial.println();
+
+    float t = dht.readTemperature();
+    float h = dht.readHumidity();
     lcd.clear();
     lcd.setCursor(0, 0);
-    lcd.print("Error: Water Level");
+    lcd.print("Temp: ");
+    lcd.print((int)t);
+    lcd.print((char)223);
+    lcd.print("C");
     lcd.setCursor(0, 1);
-    lcd.print("Too Low");
-    *portC &= ~(1<<4); // turn off green
-    *portC |= (1<<3); // turn on red
-    Serial.print(now.hour(), DEC);
-    Serial.print(':');
-    Serial.print(now.minute(), DEC);
-    Serial.print(':');
-    Serial.print(now.second(), DEC);
-    Serial.println("Change from IDLE to ERROR.");
+    lcd.print("Humidity: ");
+    lcd.print((int)h);
+    lcd.print("%");
   }
 }
 
-void adc_setup()
+void reset()
 {
-   *my_ADCSRA |= 0b10000000;
-   *my_ADCSRA &= 0b11010000;
-   *my_ADCSRA &= 0b11110000;
-   *my_ADMUX |= 0b01000000;
-   *my_ADMUX &= 0b01000000;
+  if(*portC == 0b00100000)
+  {
+    int resetValue = adc_read(0);
+    if(value >= waterThreshold)
+    {
+      *portC &= ~(1<<5); // turn off red
+      *portC |= (1<<6); //turn on green
+      lcd.clear();
+      Serial.print("State changed from ERROR to IDLE at ");
+      Serial.print(currentTime.hour(), DEC);
+      Serial.print(':');
+      Serial.print(currentTime.minute(), DEC);
+      Serial.print(':');
+      Serial.print(currentTime.second(), DEC);
+      Serial.println();
+
+      float t = dht.readTemperature();
+      float h = dht.readHumidity();
+      lcd.setCursor(0, 0);
+      lcd.print("Temp: ");
+      lcd.print((int)t);
+      lcd.print((char)223);
+      lcd.print("C");
+      lcd.setCursor(0, 1);
+      lcd.print("Humidity: ");
+      lcd.print((int)h);
+      lcd.print("%");
+    }
+  }
 }
 
-unsigned int adc_read(unsigned char channelNum)
+void adc_init() // borrowed from Lab 8
 {
-  *my_ADMUX  &= 0b11100000;
+  *my_ADCSRA |= 0b10000000;
+  *my_ADCSRA &= 0b11010000;
+  *my_ADCSRB &= 0b11110000;
+  *my_ADMUX |= 0b01000000;
+  *my_ADMUX &= 0b01000000;
+}
+
+unsigned int adc_read(unsigned char adc_channel_num) // borrowed from Lab 8
+{
+  *my_ADMUX &= 0b11100000;
   *my_ADCSRB &= 0b11011111;
-  *my_ADMUX  += channelNum;
-  *my_ADCSRA |= 0x40;
+  *my_ADMUX += adc_channel_num;
+  *my_ADCSRA |= 0b01000000;
   while((*my_ADCSRA & 0x40) != 0);
   return *my_ADC_DATA;
 }
