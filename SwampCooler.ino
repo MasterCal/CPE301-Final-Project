@@ -10,8 +10,8 @@ volatile unsigned char *portF  =  (unsigned char *) 0x31; //analog A5
 volatile unsigned char *portDDRF = (unsigned char *) 0x30;
 volatile unsigned char *portE = (unsigned char *) 0x2E;
 volatile unsigned char *portDDRE = (unsigned char *) 0x2D;
-volatile unsigned char *portB  = (unsigned char *) 0x25;
-volatile unsigned char *portDDRB = (unsigned char *) 0x24;
+//volatile unsigned char *portB  = (unsigned char *) 0x25;
+//volatile unsigned char *portDDRB = (unsigned char *) 0x24;
 volatile unsigned char *portC = (unsigned char *) 0x28;
 volatile unsigned char *portDDRC = (unsigned char *) 0x27;
 //ADC Registers
@@ -42,8 +42,8 @@ DHT dht(4, DHT11);
 void setup()
 {
   Serial.begin(9600);
-  *portDDRB |= 0x40;
-  *portB &= 0xBF;
+  //*portDDRB |= 0x40;
+  //*portB &= 0xBF;
   *portDDRF |= 0b00100000;
   *portF &= 0b11011111;
   adc_setup();
@@ -171,12 +171,14 @@ void stop()
 
 void monitor_water_levels()
 {
+  
   if(digitalRead(7) == HIGH)
   {
     myStepper.step(stepsPerRevolution);
     Serial.println("Step Motor Rotated");
   }
-  *portB |= 0b01000000;
+  //*portB |= 0b00100000;
+  *portF |= (1<<5);
   unsigned int waterLevel = adc_read(0);
   
   if(waterLevel < 300)
