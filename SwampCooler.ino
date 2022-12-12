@@ -8,6 +8,9 @@
 //State LEDs - Digital Pins 30 (Y), 31 (G), 32 (R), 33 (B)
 volatile unsigned char *portC = (unsigned char *) 0x28;
 volatile unsigned char *myDDRC = (unsigned char *) 0x27;
+//Fan Motor Control - Digital Pin 12
+volatile unsigned char *portB = (unsigned char *) 0x25;
+volatile unsigned char *myDDRB = (unsigned char *) 0x24;
 //Water Sensor - Digital Pin 7
 volatile unsigned char *portH = (unsigned char *) 0x102;
 volatile unsigned char *myDDRH = (unsigned char *) 0x101;
@@ -32,8 +35,6 @@ LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 
 const int stepsPerRevolution = 512;
 Stepper myStepper = Stepper(stepsPerRevolution, 8, 9, 10, 11);
-bool isClockwise = true;
-
 
 int value = 0;
 
@@ -59,7 +60,7 @@ void setup()
   lcd.setCursor(0,1);
   lcd.print("Mohammedali");
 
-  Serial.print("This swamp cooler began at ");
+  Serial.print("Swamp cooler began at ");
   Serial.print(currentTime.hour(), DEC);
   Serial.print(':');
   Serial.print(currentTime.minute(), DEC);
@@ -69,8 +70,10 @@ void setup()
 
   attachInterrupt(digitalPinToInterrupt(2), start, HIGH); //Start button 
   attachInterrupt(digitalPinToInterrupt(3), reset, HIGH); //Reset button
-  attachInterrupt(digitalPinToInterrupt(18), turn, RISING);//turn button
-  
+  attachInterrupt(digitalPinToInterrupt(18), turn, HIGH); //Turn button
+  attachInterrupt(digitalPinToInterrupt(19), stop_button, LOW); // Stop button
+
+  *myDDRB |= 0b01000000;
 }
 
 void loop() 
@@ -106,24 +109,70 @@ void loop()
     }
     delay(1000);
 
-    if(value < waterThreshold && *portC == 0b01000000) // green light on and water level too low
+    if(value < waterThreshold) // green or blue light on and water level too low
     {
-      *portC &= ~(1<<6); // turn green off
-      *portC |= (1<<5); // turn red on
+      if(*portC == 0b01000000)
+      {
+        *portC &= ~(1<<6); // turn green off
+      
+        Serial.print("State changed from IDLE to ERROR at ");
+        Serial.print(currentTime.hour(), DEC);
+        Serial.print(':');
+        Serial.print(currentTime.minute(), DEC);
+        Serial.print(':');
+        Serial.print(currentTime.second(), DEC);
+        Serial.println();
+      }
+      else if(*portC == 0b00010000)
+      {
+        *portC &= ~(1<<4); // turn blue off
+      
+        *portB &= ~(1<<6);
+        Serial.print("State changed from RUNNING to ERROR at ");
+        Serial.print(currentTime.hour(), DEC);
+        Serial.print(':');
+        Serial.print(currentTime.minute(), DEC);
+        Serial.print(':');
+        Serial.print(currentTime.second(), DEC);
+        Serial.println();
+      }
 
-      Serial.print("State changed from IDLE to ERROR at ");
-      Serial.print(currentTime.hour(), DEC);
-      Serial.print(':');
-      Serial.print(currentTime.minute(), DEC);
-      Serial.print(':');
-      Serial.print(currentTime.second(), DEC);
-      Serial.println();
+      *portC |= (1<<5); // turn red on
       
       lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print("ERROR: Water");
       lcd.setCursor(0, 1);
       lcd.print("Too Low.");
+    }
+
+    if(dht.readTemperature() > tempThreshold && *portC == 0b01000000)
+    {
+      *portC &= ~(1<<6); // turn off green
+      *portC |= (1<<4); //turn on blue
+      *portB |= (1<<6); 
+      lcd.clear();
+      Serial.print("State changed from IDLE to RUNNING at ");
+      Serial.print(currentTime.hour(), DEC);
+      Serial.print(':');
+      Serial.print(currentTime.minute(), DEC);
+      Serial.print(':');
+      Serial.print(currentTime.second(), DEC);
+      Serial.println();
+    }
+    else if(dht.readTemperature() < tempThreshold && *portC == 0b00010000)
+    {
+      *portC &= ~(1<<4); // turn off blue
+      *portC |= (1<<6); //turn on green
+      *portB ~(1<<6);
+      lcd.clear();
+      Serial.print("State changed from IDLE to RUNNING at ");
+      Serial.print(currentTime.hour(), DEC);
+      Serial.print(':');
+      Serial.print(currentTime.minute(), DEC);
+      Serial.print(':');
+      Serial.print(currentTime.second(), DEC);
+      Serial.println();
     }
   }
 }
@@ -194,9 +243,27 @@ void turn()
 {
   if(*portC != 0b10000000)
   {
+    Serial.println("Turn button pressed.");
     myStepper.step(stepsPerRevolution);
     Serial.println("90D clockwise");
-   
+  }
+}
+
+void stop_button()
+{
+  if(*portC == 0b00010000)
+  {
+     *portB &= ~(1<<6);
+     *portC &= ~(1<<4); // turn off blue
+     *portC |= (1<<7); //turn on yellow
+     lcd.clear();
+     Serial.print("State changed from RUNNING to DISABLED at ");
+     Serial.print(currentTime.hour(), DEC);
+     Serial.print(':');
+     Serial.print(currentTime.minute(), DEC);
+     Serial.print(':');
+     Serial.print(currentTime.second(), DEC);
+     Serial.println();
   }
 }
 
